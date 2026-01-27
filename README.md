@@ -1,69 +1,53 @@
 # OXXYMORE INTERACTIVE
 
-🎮 **Independent Game Studio & Interactive Systems Lab**
+🎮 Independent Game Studio & Interactive Systems Lab
 
-OXXYMORE INTERACTIVE is a French independent studio dedicated to the creation of original, strategic and educational game experiences.
+OXXYMORE INTERACTIVE is a French independent studio dedicated to the design of original game experiences and interactive systems, with a strong focus on strategy, cognition and meaningful gameplay.
 
-We design games and interactive systems at the intersection of:
+We explore the intersection of:
 
-- strategy and cognition  
-- competitive gameplay  
-- learning and decision-making  
-- strong narrative universes  
+- strategic thinking and game design,
+- competitive and systemic mechanics,
+- cognition, learning dynamics and experimentation,
+- original narrative and conceptual universes.
 
----
+## What we build
 
-## 🎯 What we build
+- Original intellectual properties, inspired by board games and designed for digital-first environments  
+- Experimental game mechanics combining strategy, logic and depth  
+- Cognitive and learning-oriented interactive experiences, without prescriptive intent  
+- Internal tools, prototypes and research-oriented projects
 
-- **Original IPs** (board-inspired, digital-first, competitive-ready)  
-- **Experimental game mechanics** combining strategy, logic and impact  
-- **Educational and cognitive-oriented experiences**  
-- **Tools, prototypes and internal R&D projects**
+One of our ongoing universes in development is **OBAN**.
 
-Our flagship universe: **OBAN**.
-
----
-
-## 🧠 Philosophy
+## Philosophy
 
 We believe games can be:
 
 - demanding without being exclusionary,  
 - competitive without being shallow,  
-- educational without being boring.
+- intellectually stimulating without being dogmatic.
 
-We value:
+Our approach values:
 
 - clarity over noise,  
 - depth over gimmicks,  
 - long-term vision over short-term hype.
 
----
-
-## 🏗️ Organization
+## Organization & repositories
 
 This GitHub organization hosts:
 
-- internal tools and technical foundations,  
-- game prototypes and experimental systems,  
-- shared libraries and reusable components,  
+- internal tools and experiments,  
+- game prototypes and technical foundations,  
+- shared components used across our projects,  
 - documentation and governance-related repositories when relevant.
 
-Some repositories may remain private during active development phases.
+Some repositories are intentionally kept private during active development or experimentation phases.
 
----
+## Links
 
-## 🌍 Links
-
-- Website: https://www.oxxymoreinteractive.com  
-- Contact: contact@oxxymoreinteractive.com  
-
----
-
-## 📁 Repository scope
-
-This repository contains the public profile and organization-level governance files for **OXXYMORE INTERACTIVE**.
-
----
+Website: https://www.oxxymoreinteractive.com  
+Contact: contact@oxxymoreinteractive.com  
 
 © OXXYMORE INTERACTIVE — All rights reserved.
