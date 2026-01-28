@@ -1,4 +1,4 @@
-name: Notify Discord (GitHub Activity)
+name: GitHub -> Discord (Activity)
 
 on:
   issues:
@@ -8,62 +8,84 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   notify:
+    name: Notify Discord
     runs-on: ubuntu-latest
 
+    # PR: uniquement si la PR vise main
+    if: |
+      github.event_name != 'pull_request' || github.base_ref == 'main'
+
     steps:
-      - name: Send notification to Discord
-        env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_GITHUB_ACTIVITY }}
-          EVENT_NAME: ${{ github.event_name }}
-          REPO: ${{ github.repository }}
-          ACTOR: ${{ github.actor }}
-          REF: ${{ github.ref }}
-
-          ISSUE_TITLE: ${{ github.event.issue.title }}
-          ISSUE_URL: ${{ github.event.issue.html_url }}
-
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_URL: ${{ github.event.pull_request.html_url }}
-
-          COMMIT_MSG: ${{ github.event.head_commit.message }}
+      - name: Build Discord message
+        id: build
+        shell: bash
         run: |
           set -euo pipefail
 
-          if [ -z "${DISCORD_WEBHOOK:-}" ]; then
-            echo "Missing secret: DISCORD_WEBHOOK_GITHUB_ACTIVITY" >&2
+          REPO="${GITHUB_REPOSITORY##*/}"
+
+          # Prefix repo -> [DOCS]/[CORE]/[WEB]
+          case "$REPO" in
+            *docs*) PREFIX="[DOCS]" ;;
+            *web*)  PREFIX="[WEB]"  ;;
+            *)      PREFIX="[CORE]" ;;
+          esac
+
+          # Emoji selon event
+          case "${GITHUB_EVENT_NAME}" in
+            issues)       EMOJI="🐛" ;;
+            push)         EMOJI="🚀" ;;
+            pull_request) EMOJI="🔀" ;;
+            *)            EMOJI="🔔" ;;
+          esac
+
+          # Message selon event
+          if [ "${GITHUB_EVENT_NAME}" = "issues" ]; then
+            TITLE='${{ github.event.issue.title }}'
+            URL='${{ github.event.issue.html_url }}'
+            ACTOR='${{ github.actor }}'
+            NUMBER='${{ github.event.issue.number }}'
+            CONTENT="$EMOJI $PREFIX Issue #$NUMBER opened by $ACTOR: $TITLE — $URL"
+
+          elif [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+            TITLE='${{ github.event.pull_request.title }}'
+            URL='${{ github.event.pull_request.html_url }}'
+            ACTOR='${{ github.actor }}'
+            NUMBER='${{ github.event.pull_request.number }}'
+            BASE='${{ github.base_ref }}'
+            CONTENT="$EMOJI $PREFIX PR #$NUMBER opened (base: $BASE) by $ACTOR: $TITLE — $URL"
+
+          elif [ "${GITHUB_EVENT_NAME}" = "push" ]; then
+            ACTOR='${{ github.actor }}'
+            REF='${{ github.ref_name }}'
+            URL="https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}"
+            CONTENT="$EMOJI $PREFIX Push on $REF by $ACTOR — $URL"
+
+          else
+            CONTENT="$EMOJI $PREFIX Event: ${GITHUB_EVENT_NAME}"
+          fi
+
+          # Export pour étape suivante
+          echo "content<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$CONTENT" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Post to Discord
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_GITHUB_ACTIVITY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DISCORD_WEBHOOK_URL:-}" ]; then
+            echo "Missing secret: DISCORD_WEBHOOK_GITHUB_ACTIVITY"
             exit 1
           fi
 
-          if [ "$EVENT_NAME" = "issues" ]; then
-            CONTENT="Issue opened: ${ISSUE_TITLE} — ${ISSUE_URL} (repo: ${REPO}, by: ${ACTOR})"
-          elif [ "$EVENT_NAME" = "pull_request" ]; then
-            CONTENT="PR opened: ${PR_TITLE} — ${PR_URL} (repo: ${REPO}, by: ${ACTOR})"
-          elif [ "$EVENT_NAME" = "push" ]; then
-            BRANCH="${REF#refs/heads/}"
-            CONTENT="Push to ${BRANCH} in ${REPO} by ${ACTOR}: ${COMMIT_MSG}"
-          else
-            CONTENT="Event ${EVENT_NAME} in ${REPO} by ${ACTOR}"
-          fi
-
-          export CONTENT
-
-          python - <<'PY'
-import json, os, urllib.request
-
-webhook = os.environ["DISCORD_WEBHOOK"]
-content = os.environ["CONTENT"]
-
-payload = json.dumps({"content": content}).encode("utf-8")
-
-req = urllib.request.Request(
-    webhook,
-    data=payload,
-    headers={"Content-Type": "application/json"},
-    method="POST",
-)
-
-with urllib.request.urlopen(req) as resp:
-    print("Discord response:", resp.status)
-PY
+          curl -sS -X POST \
+            -H "Content-Type: application/json" \
+            -d "{\"content\":\"${{ steps.build.outputs.content }}\"}" \
+            "$DISCORD_WEBHOOK_URL"
