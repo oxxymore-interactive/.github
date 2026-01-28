@@ -1,64 +1,39 @@
-name: Discord Notify (Reusable)
+name: GitHub → Discord notifications
 
 on:
-  workflow_call:
-    inputs:
-      title:
-        required: false
-        type: string
-      url:
-        required: false
-        type: string
-      repo:
-        required: false
-        type: string
-      actor:
-        required: false
-        type: string
-      event:
-        required: false
-        type: string
-    secrets:
-      DISCORD_WEBHOOK:
-        required: true
-
-permissions:
-  contents: read
+  issues:
+    types: [opened]
+  workflow_dispatch:
 
 jobs:
   notify:
     runs-on: ubuntu-latest
     steps:
-      - name: Send message to Discord
+      - name: Notify Discord
         env:
-          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-          TITLE: ${{ inputs.title }}
-          URL: ${{ inputs.url }}
-          REPO: ${{ inputs.repo }}
-          ACTOR: ${{ inputs.actor }}
-          EVENT: ${{ inputs.event }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_GITHUB_ACTIVITY }}
         run: |
-          set -euo pipefail
-
-          TITLE="${TITLE:-GitHub event}"
-          URL="${URL:-$RUN_URL}"
-          REPO="${REPO:-${GITHUB_REPOSITORY}}"
-          ACTOR="${ACTOR:-${GITHUB_ACTOR}}"
-          EVENT="${EVENT:-${GITHUB_EVENT_NAME}}"
-
-          # JSON safe payload (escapes quotes, emojis, etc.)
-          payload=$(jq -n --arg content "**${EVENT}** — ${REPO}\n**${TITLE}**\nBy: ${ACTOR}\n${URL}" '{content:$content}')
-
-          http_code=$(curl -sS -o /tmp/discord_resp.txt -w "%{http_code}" \
-            -H "Content-Type: application/json" \
-            -X POST \
-            -d "$payload" \
-            "$WEBHOOK" || true)
-
-          echo "Discord HTTP status: $http_code"
-          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
-            echo "Discord response:"
-            cat /tmp/discord_resp.txt || true
+          if [ -z "$DISCORD_WEBHOOK" ]; then
+            echo "Missing secret: DISCORD_WEBHOOK_GITHUB_ACTIVITY"
             exit 1
           fi
+
+          ISSUE_TITLE="${{ github.event.issue.title }}"
+          ISSUE_URL="${{ github.event.issue.html_url }}"
+          REPO="${{ github.repository }}"
+          ACTOR="${{ github.actor }}"
+          NUMBER="${{ github.event.issue.number }}"
+
+          CONTENT="New issue opened in **${REPO}** by **${ACTOR}**: #${NUMBER} — ${ISSUE_TITLE}\n${ISSUE_URL}"
+
+          curl -sS -X POST \
+            -H "Content-Type: application/json" \
+            -d "$(python3 - << 'PY'
+import json, os
+print(json.dumps({"content": os.environ["CONTENT"]}))
+PY
+            )" \
+            "$DISCORD_WEBHOOK"
+        shell: bash
+        env:
+          CONTENT: ${{ format('New issue opened in **{0}** by **{1}**: #{2} — {3}\n{4}', github.repository, github.actor, github.event.issue.number, github.event.issue.title, github.event.issue.html_url) }}
