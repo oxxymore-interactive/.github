@@ -1,6 +1,6 @@
-name: GitHub → Discord notifications
+name: GitHub to Discord notifications
 
-on:
+"on":
   issues:
     types: [opened]
   workflow_dispatch:
@@ -18,22 +18,23 @@ jobs:
             exit 1
           fi
 
-          ISSUE_TITLE="${{ github.event.issue.title }}"
-          ISSUE_URL="${{ github.event.issue.html_url }}"
           REPO="${{ github.repository }}"
           ACTOR="${{ github.actor }}"
           NUMBER="${{ github.event.issue.number }}"
+          TITLE="${{ github.event.issue.title }}"
+          URL="${{ github.event.issue.html_url }}"
 
-          CONTENT="New issue opened in **${REPO}** by **${ACTOR}**: #${NUMBER} — ${ISSUE_TITLE}\n${ISSUE_URL}"
+          CONTENT="New issue opened in ${REPO} by ${ACTOR}: #${NUMBER} - ${TITLE} ${URL}"
+
+          python3 - <<'PY' > payload.json
+          import json, os
+          print(json.dumps({"content": os.environ["CONTENT"]}))
+          PY
 
           curl -sS -X POST \
             -H "Content-Type: application/json" \
-            -d "$(python3 - << 'PY'
-import json, os
-print(json.dumps({"content": os.environ["CONTENT"]}))
-PY
-            )" \
+            --data @payload.json \
             "$DISCORD_WEBHOOK"
         shell: bash
         env:
-          CONTENT: ${{ format('New issue opened in **{0}** by **{1}**: #{2} — {3}\n{4}', github.repository, github.actor, github.event.issue.number, github.event.issue.title, github.event.issue.html_url) }}
+          CONTENT: New issue opened in ${{ github.repository }} by ${{ github.actor }}: #${{ github.event.issue.number }} - ${{ github.event.issue.title }} ${{ github.event.issue.html_url }}
