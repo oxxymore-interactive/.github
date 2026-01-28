@@ -1,30 +1,21 @@
-name: GitHub → Discord notifications (reusable)
+name: GitHub → Discord notifications
 
 on:
-  workflow_call:
-    inputs:
-      event_name:
-        required: true
-        type: string
-      repository:
-        required: true
-        type: string
-      actor:
-        required: true
-        type: string
+  issues:
+    types: [opened]
+  pull_request:
+    types: [opened]
 
 jobs:
-  notify:
+  notify-discord:
     runs-on: ubuntu-latest
-
     steps:
       - name: Send notification to Discord
-        uses: Ilshidur/action-discord@master
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_GITHUB_ACTIVITY }}
-        with:
-          args: >
-            🔔 **GitHub Event**
-            Repository: **${{ inputs.repository }}**
-            Event: **${{ inputs.event_name }}**
-            Actor: **${{ inputs.actor }}**
+        run: |
+          curl -X POST "$DISCORD_WEBHOOK" \
+          -H "Content-Type: application/json" \
+          -d '{
+            "content": "🔔 **GitHub Event**\n\nRepository: ${{ github.repository }}\nEvent: ${{ github.event_name }}\nActor: ${{ github.actor }}"
+          }'
