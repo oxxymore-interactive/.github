@@ -1,40 +1,69 @@
-name: GitHub to Discord notifications
+name: Notify Discord (GitHub Activity)
 
-"on":
+on:
   issues:
     types: [opened]
-  workflow_dispatch:
+  pull_request:
+    types: [opened]
+  push:
+    branches: [main]
 
 jobs:
   notify:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Notify Discord
+      - name: Send notification to Discord
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_GITHUB_ACTIVITY }}
+          EVENT_NAME: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+          ACTOR: ${{ github.actor }}
+          REF: ${{ github.ref }}
+
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_URL: ${{ github.event.issue.html_url }}
+
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
-          if [ -z "$DISCORD_WEBHOOK" ]; then
-            echo "Missing secret: DISCORD_WEBHOOK_GITHUB_ACTIVITY"
+          set -euo pipefail
+
+          if [ -z "${DISCORD_WEBHOOK:-}" ]; then
+            echo "Missing secret: DISCORD_WEBHOOK_GITHUB_ACTIVITY" >&2
             exit 1
           fi
 
-          REPO="${{ github.repository }}"
-          ACTOR="${{ github.actor }}"
-          NUMBER="${{ github.event.issue.number }}"
-          TITLE="${{ github.event.issue.title }}"
-          URL="${{ github.event.issue.html_url }}"
+          if [ "$EVENT_NAME" = "issues" ]; then
+            CONTENT="Issue opened: ${ISSUE_TITLE} — ${ISSUE_URL} (repo: ${REPO}, by: ${ACTOR})"
+          elif [ "$EVENT_NAME" = "pull_request" ]; then
+            CONTENT="PR opened: ${PR_TITLE} — ${PR_URL} (repo: ${REPO}, by: ${ACTOR})"
+          elif [ "$EVENT_NAME" = "push" ]; then
+            BRANCH="${REF#refs/heads/}"
+            CONTENT="Push to ${BRANCH} in ${REPO} by ${ACTOR}: ${COMMIT_MSG}"
+          else
+            CONTENT="Event ${EVENT_NAME} in ${REPO} by ${ACTOR}"
+          fi
 
-          CONTENT="New issue opened in ${REPO} by ${ACTOR}: #${NUMBER} - ${TITLE} ${URL}"
+          export CONTENT
 
-          python3 - <<'PY' > payload.json
-          import json, os
-          print(json.dumps({"content": os.environ["CONTENT"]}))
-          PY
+          python - <<'PY'
+import json, os, urllib.request
 
-          curl -sS -X POST \
-            -H "Content-Type: application/json" \
-            --data @payload.json \
-            "$DISCORD_WEBHOOK"
-        shell: bash
-        env:
-          CONTENT: New issue opened in ${{ github.repository }} by ${{ github.actor }}: #${{ github.event.issue.number }} - ${{ github.event.issue.title }} ${{ github.event.issue.html_url }}
+webhook = os.environ["DISCORD_WEBHOOK"]
+content = os.environ["CONTENT"]
+
+payload = json.dumps({"content": content}).encode("utf-8")
+
+req = urllib.request.Request(
+    webhook,
+    data=payload,
+    headers={"Content-Type": "application/json"},
+    method="POST",
+)
+
+with urllib.request.urlopen(req) as resp:
+    print("Discord response:", resp.status)
+PY
