@@ -1,91 +1,96 @@
-name: GitHub -> Discord (Activity)
+name: GitHub → Discord notifications
 
 on:
   issues:
-    types: [opened]
-  pull_request:
-    types: [opened]
+    types: [opened, reopened, closed]
   push:
     branches: [main]
-
-permissions:
-  contents: read
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, closed, ready_for_review]
 
 jobs:
   notify:
-    name: Notify Discord
     runs-on: ubuntu-latest
 
-    # PR: uniquement si la PR vise main
+    # Gouvernance:
+    # - Only run for the org repos (avoid surprises)
+    # - Ignore PRs coming from forks
     if: |
-      github.event_name != 'pull_request' || github.base_ref == 'main'
+      github.repository_owner == 'oxxymore-interactive' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
 
     steps:
-      - name: Build Discord message
-        id: build
+      - name: Build message
+        id: msg
         shell: bash
         run: |
           set -euo pipefail
 
-          REPO="${GITHUB_REPOSITORY##*/}"
+          REPO="${GITHUB_REPOSITORY#*/}"
 
-          # Prefix repo -> [DOCS]/[CORE]/[WEB]
+          PREFIX="[CORE]"
           case "$REPO" in
-            *docs*) PREFIX="[DOCS]" ;;
-            *web*)  PREFIX="[WEB]"  ;;
-            *)      PREFIX="[CORE]" ;;
+            *docs*|*DOCS*) PREFIX="[DOCS]" ;;
+            *.github|*github*) PREFIX="[CORE]" ;;
+            *web*|*site*) PREFIX="[WEB]" ;;
           esac
 
-          # Emoji selon event
-          case "${GITHUB_EVENT_NAME}" in
-            issues)       EMOJI="🐛" ;;
-            push)         EMOJI="🚀" ;;
-            pull_request) EMOJI="🔀" ;;
-            *)            EMOJI="🔔" ;;
-          esac
+          EVENT="${GITHUB_EVENT_NAME}"
 
-          # Message selon event
-          if [ "${GITHUB_EVENT_NAME}" = "issues" ]; then
-            TITLE='${{ github.event.issue.title }}'
-            URL='${{ github.event.issue.html_url }}'
-            ACTOR='${{ github.actor }}'
-            NUMBER='${{ github.event.issue.number }}'
-            CONTENT="$EMOJI $PREFIX Issue #$NUMBER opened by $ACTOR: $TITLE — $URL"
+          if [ "$EVENT" = "issues" ]; then
+            EMOJI="🐛"
+            ACTION="${{ github.event.action }}"
+            NUMBER="${{ github.event.issue.number }}"
+            TITLE="${{ github.event.issue.title }}"
+            URL="${{ github.event.issue.html_url }}"
+            ACTOR="${{ github.actor }}"
+            TEXT="$EMOJI $PREFIX Issue #$NUMBER $ACTION by $ACTOR: $TITLE"$'\n'"$URL"
 
-          elif [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
-            TITLE='${{ github.event.pull_request.title }}'
-            URL='${{ github.event.pull_request.html_url }}'
-            ACTOR='${{ github.actor }}'
-            NUMBER='${{ github.event.pull_request.number }}'
-            BASE='${{ github.base_ref }}'
-            CONTENT="$EMOJI $PREFIX PR #$NUMBER opened (base: $BASE) by $ACTOR: $TITLE — $URL"
+          elif [ "$EVENT" = "push" ]; then
+            EMOJI="🚀"
+            BRANCH="${GITHUB_REF_NAME}"
+            ACTOR="${{ github.actor }}"
+            COMPARE_URL="${{ github.event.compare }}"
+            MSG="${{ github.event.head_commit.message }}"
+            SHORT_SHA="${GITHUB_SHA::7}"
+            TEXT="$EMOJI $PREFIX Push to $BRANCH by $ACTOR ($SHORT_SHA): $MSG"$'\n'"$COMPARE_URL"
 
-          elif [ "${GITHUB_EVENT_NAME}" = "push" ]; then
-            ACTOR='${{ github.actor }}'
-            REF='${{ github.ref_name }}'
-            URL="https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}"
-            CONTENT="$EMOJI $PREFIX Push on $REF by $ACTOR — $URL"
-
+          elif [ "$EVENT" = "pull_request" ]; then
+            EMOJI="🔀"
+            ACTION="${{ github.event.action }}"
+            NUMBER="${{ github.event.pull_request.number }}"
+            TITLE="${{ github.event.pull_request.title }}"
+            URL="${{ github.event.pull_request.html_url }}"
+            BASE="${{ github.event.pull_request.base.ref }}"
+            ACTOR="${{ github.actor }}"
+            TEXT="$EMOJI $PREFIX PR #$NUMBER $ACTION → $BASE by $ACTOR: $TITLE"$'\n'"$URL"
           else
-            CONTENT="$EMOJI $PREFIX Event: ${GITHUB_EVENT_NAME}"
+            TEXT="ℹ️ $PREFIX Event $EVENT"
           fi
 
-          # Export pour étape suivante
-          echo "content<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$CONTENT" >> "$GITHUB_OUTPUT"
+          echo "text<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$TEXT" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
 
-      - name: Post to Discord
+      - name: Notify Discord
         env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_GITHUB_ACTIVITY }}
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_GITHUB_ACTIVITY }}
+          CONTENT: ${{ steps.msg.outputs.text }}
         run: |
-          set -euo pipefail
-          if [ -z "${DISCORD_WEBHOOK_URL:-}" ]; then
-            echo "Missing secret: DISCORD_WEBHOOK_GITHUB_ACTIVITY"
-            exit 1
-          fi
+          python - <<'PY'
+          import os, json, urllib.request
 
-          curl -sS -X POST \
-            -H "Content-Type: application/json" \
-            -d "{\"content\":\"${{ steps.build.outputs.content }}\"}" \
-            "$DISCORD_WEBHOOK_URL"
+          url = os.environ["DISCORD_WEBHOOK"]
+          content = os.environ.get("CONTENT", "").strip()
+
+          payload = {"content": content if content else "ℹ️ GitHub event (empty message)"}
+          req = urllib.request.Request(
+              url,
+              data=json.dumps(payload).encode("utf-8"),
+              headers={"Content-Type": "application/json"},
+              method="POST"
+          )
+          with urllib.request.urlopen(req) as r:
+              print("Discord status:", r.status)
+          PY
