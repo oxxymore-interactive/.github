@@ -10,12 +10,30 @@ jobs:
   notify-discord:
     runs-on: ubuntu-latest
     steps:
-      - name: Send notification to Discord
+      - name: Send notification to Discord (safe)
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_GITHUB_ACTIVITY }}
         run: |
-          curl -X POST "$DISCORD_WEBHOOK" \
-          -H "Content-Type: application/json" \
-          -d '{
-            "content": "🔔 **GitHub Event**\n\nRepository: ${{ github.repository }}\nEvent: ${{ github.event_name }}\nActor: ${{ github.actor }}"
-          }'
+          payload=$(jq -n \
+            --arg repo "${{ github.repository }}" \
+            --arg event "${{ github.event_name }}" \
+            --arg actor "${{ github.actor }}" \
+            '{content: ("🔔 GitHub event\n\nRepo: " + $repo + "\nEvent: " + $event + "\nActor: " + $actor)}'
+          )
+
+          echo "Payload:"
+          echo "$payload"
+
+          http_code=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "$DISCORD_WEBHOOK" \
+            -H "Content-Type: application/json" \
+            -d "$payload")
+
+          echo "Discord HTTP status: $http_code"
+
+          if [ "$http_code" -ne 204 ]; then
+            echo "❌ Discord webhook failed"
+            exit 1
+          fi
+
+          echo "✅ Discord notification sent"
