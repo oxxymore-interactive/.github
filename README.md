@@ -1,53 +1,69 @@
-# OXXYMORE INTERACTIVE
+name: Discord Notify (Reusable)
 
-🎮 Independent Game Studio & Interactive Systems Lab
+on:
+  workflow_call:
+    inputs:
+      title:
+        required: false
+        type: string
+      url:
+        required: false
+        type: string
+      repo:
+        required: false
+        type: string
+      actor:
+        required: false
+        type: string
+      event:
+        required: false
+        type: string
+    secrets:
+      DISCORD_WEBHOOK:
+        required: true
 
-OXXYMORE INTERACTIVE is a French independent studio dedicated to the design of original game experiences and interactive systems, with a strong focus on strategy, cognition and meaningful gameplay.
+permissions:
+  contents: read
 
-We explore the intersection of:
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send message to Discord
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          TITLE: ${{ inputs.title }}
+          URL: ${{ inputs.url }}
+          REPO: ${{ inputs.repo }}
+          ACTOR: ${{ inputs.actor }}
+          EVENT: ${{ inputs.event }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
 
-- strategic thinking and game design,
-- competitive and systemic mechanics,
-- cognition, learning dynamics and experimentation,
-- original narrative and conceptual universes.
+          # Fallbacks (au cas où un input n'est pas transmis)
+          TITLE="${TITLE:-GitHub event}"
+          URL="${URL:-$RUN_URL}"
+          REPO="${REPO:-${GITHUB_REPOSITORY}}"
+          ACTOR="${ACTOR:-${GITHUB_ACTOR}}"
+          EVENT="${EVENT:-${GITHUB_EVENT_NAME}}"
 
-## What we build
+          payload=$(cat <<EOF
+          {
+            "content": "**${EVENT}** — ${REPO}\n**${TITLE}**\nBy: ${ACTOR}\n${URL}"
+          }
+          EOF
+          )
 
-- Original intellectual properties, inspired by board games and designed for digital-first environments  
-- Experimental game mechanics combining strategy, logic and depth  
-- Cognitive and learning-oriented interactive experiences, without prescriptive intent  
-- Internal tools, prototypes and research-oriented projects
+          http_code=$(curl -sS -o /tmp/discord_resp.txt -w "%{http_code}" \
+            -H "Content-Type: application/json" \
+            -X POST \
+            -d "$payload" \
+            "$WEBHOOK" || true)
 
-One of our ongoing universes in development is **OBAN**.
-
-## Philosophy
-
-We believe games can be:
-
-- demanding without being exclusionary,  
-- competitive without being shallow,  
-- intellectually stimulating without being dogmatic.
-
-Our approach values:
-
-- clarity over noise,  
-- depth over gimmicks,  
-- long-term vision over short-term hype.
-
-## Organization & repositories
-
-This GitHub organization hosts:
-
-- internal tools and experiments,  
-- game prototypes and technical foundations,  
-- shared components used across our projects,  
-- documentation and governance-related repositories when relevant.
-
-Some repositories are intentionally kept private during active development or experimentation phases.
-
-## Links
-
-Website: https://www.oxxymoreinteractive.com  
-Contact: contact@oxxymoreinteractive.com  
-
-© OXXYMORE INTERACTIVE — All rights reserved.
+          echo "Discord HTTP status: $http_code"
+          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+            echo "Discord response:"
+            cat /tmp/discord_resp.txt || true
+            exit 1
+          fi
