@@ -1,39 +1,64 @@
-name: GitHub → Discord notifications
+name: Discord Notify (Reusable)
 
 on:
-  issues:
-    types: [opened]
-  pull_request:
-    types: [opened]
+  workflow_call:
+    inputs:
+      title:
+        required: false
+        type: string
+      url:
+        required: false
+        type: string
+      repo:
+        required: false
+        type: string
+      actor:
+        required: false
+        type: string
+      event:
+        required: false
+        type: string
+    secrets:
+      DISCORD_WEBHOOK:
+        required: true
+
+permissions:
+  contents: read
 
 jobs:
-  notify-discord:
+  notify:
     runs-on: ubuntu-latest
     steps:
-      - name: Send notification to Discord (safe)
+      - name: Send message to Discord
         env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_GITHUB_ACTIVITY }}
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          TITLE: ${{ inputs.title }}
+          URL: ${{ inputs.url }}
+          REPO: ${{ inputs.repo }}
+          ACTOR: ${{ inputs.actor }}
+          EVENT: ${{ inputs.event }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          payload=$(jq -n \
-            --arg repo "${{ github.repository }}" \
-            --arg event "${{ github.event_name }}" \
-            --arg actor "${{ github.actor }}" \
-            '{content: ("🔔 GitHub event\n\nRepo: " + $repo + "\nEvent: " + $event + "\nActor: " + $actor)}'
-          )
+          set -euo pipefail
 
-          echo "Payload:"
-          echo "$payload"
+          TITLE="${TITLE:-GitHub event}"
+          URL="${URL:-$RUN_URL}"
+          REPO="${REPO:-${GITHUB_REPOSITORY}}"
+          ACTOR="${ACTOR:-${GITHUB_ACTOR}}"
+          EVENT="${EVENT:-${GITHUB_EVENT_NAME}}"
 
-          http_code=$(curl -s -o /dev/null -w "%{http_code}" \
-            -X POST "$DISCORD_WEBHOOK" \
+          # JSON safe payload (escapes quotes, emojis, etc.)
+          payload=$(jq -n --arg content "**${EVENT}** — ${REPO}\n**${TITLE}**\nBy: ${ACTOR}\n${URL}" '{content:$content}')
+
+          http_code=$(curl -sS -o /tmp/discord_resp.txt -w "%{http_code}" \
             -H "Content-Type: application/json" \
-            -d "$payload")
+            -X POST \
+            -d "$payload" \
+            "$WEBHOOK" || true)
 
           echo "Discord HTTP status: $http_code"
-
-          if [ "$http_code" -ne 204 ]; then
-            echo "❌ Discord webhook failed"
+          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+            echo "Discord response:"
+            cat /tmp/discord_resp.txt || true
             exit 1
           fi
-
-          echo "✅ Discord notification sent"
